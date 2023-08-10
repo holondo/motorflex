@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "mongoflex"
+version = "0.1.0"
+description = "Mongoflex is a ORM-like wrapper for mongodb to allow declarative creation and management of mongo collections."
+authors = ["Giancarlo Rocha <giancarloiff@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pymongo = "^4.4.1"
+inflect = "^7.0.0"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
