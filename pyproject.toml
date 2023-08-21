@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mongoflex"
-version = "0.1.0"
+version = "0.1.1"
 description = "Mongoflex is a ORM-like wrapper for mongodb to allow declarative creation and management of mongo collections."
 authors = ["Giancarlo Rocha <giancarloiff@gmail.com>"]
 readme = "README.md"
