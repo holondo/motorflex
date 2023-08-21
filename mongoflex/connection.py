@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Mapping
 
 from pymongo import MongoClient
 
@@ -11,6 +11,7 @@ __all__ = [
 ]
 
 DEFAULT_URI = "mongodb://localhost:27017/test"
+DEFAULT_CLIENT_NAME = "default"
 
 
 class NotConnectedError(Exception):
@@ -18,31 +19,37 @@ class NotConnectedError(Exception):
 
 
 class ConnectionManager:
-    client: MongoClient = None
+    clients: Mapping[str, MongoClient] = {}
 
     @classmethod
-    def connect(cls, host: str, **kwargs: Any) -> MongoClient:
-        cls.client = MongoClient(host=host, **kwargs)
+    def connect(
+        cls, host: str, client_name: str = DEFAULT_CLIENT_NAME, **kwargs: Any
+    ) -> MongoClient:
+        cls.clients[client_name] = MongoClient(host=host, **kwargs)
 
-        return cls.client
-
-    @classmethod
-    def get_client(cls) -> MongoClient:
-        if not cls.client:
-            raise NotConnectedError("Not connected to MongoDB")
-
-        return cls.client
+        return cls.clients[client_name]
 
     @classmethod
-    def get_database(cls, db_name: str) -> MongoClient:
-        client = cls.get_client()
+    def get_client(cls, client_name: str = DEFAULT_CLIENT_NAME) -> MongoClient:
+        if not cls.clients.get(client_name):
+            raise NotConnectedError(f"No connection named {client_name}")
+
+        return cls.clients[client_name]
+
+    @classmethod
+    def get_database(
+        cls, db_name: str, client_name: str = DEFAULT_CLIENT_NAME
+    ) -> MongoClient:
+        client = cls.get_client(client_name=client_name)
 
         return client.get_database(db_name)
 
 
-def connect(host: str = DEFAULT_URI, **kwargs: Any) -> MongoClient:
-    return ConnectionManager.connect(host, **kwargs)
+def connect(
+    host: str = DEFAULT_URI, client_name: str = DEFAULT_CLIENT_NAME, **kwargs: Any
+) -> MongoClient:
+    return ConnectionManager.connect(host, client_name=client_name, **kwargs)
 
 
-def get_database(db_name: str) -> MongoClient:
-    return ConnectionManager.get_database(db_name)
+def get_database(db_name: str, client_name: str = DEFAULT_CLIENT_NAME) -> MongoClient:
+    return ConnectionManager.get_database(db_name, client_name=client_name)

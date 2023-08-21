@@ -7,6 +7,7 @@ from typing import (
     Iterable,
     Mapping,
     Optional,
+    Protocol,
     Sequence,
     TypeVar,
     Union,
@@ -18,7 +19,7 @@ from pymongo import IndexModel
 from pymongo.collection import Collection
 from pymongo.database import Database
 
-from mongoflex.connection import get_database
+from mongoflex.connection import DEFAULT_CLIENT_NAME, get_database
 
 __all__ = [
     "Model",
@@ -28,6 +29,10 @@ __all__ = [
 inflector = engine()
 
 T = TypeVar("T", bound="Model")
+
+
+class MetaConfig(Protocol):
+    client_name: str
 
 
 def to_collection_name(class_name):
@@ -68,10 +73,16 @@ class ModelMeta(type):
         cls.database = cls.database or database
         cls.collection = cls.collection or collection
 
+    def get_config(cls, name: str, default: Any = None):
+        config = getattr(cls, "Meta", {})
+
+        return getattr(config, name, default)
+
     def get_database(cls) -> Database:
         db_name = getattr(cls, "database", None)
+        client_name = cls.get_config("client_name", DEFAULT_CLIENT_NAME)
 
-        return get_database(db_name)
+        return get_database(db_name, client_name=client_name)
 
     @property
     def objects(cls) -> Collection:

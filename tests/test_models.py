@@ -4,6 +4,7 @@ from typing import Optional
 import pytest
 from bson import ObjectId
 
+from mongoflex.connection import connect
 from mongoflex.models import Model, to_collection_name
 
 
@@ -123,3 +124,39 @@ def test_model_find_one_null_when_not_found():
     res = MyModel.find_one({"_id": ObjectId()})
 
     assert res is None
+
+
+def test_can_use_different_databases():
+    uri = "mongodb://localhost:27017/sample_database"
+
+    connect(uri, client_name="sample_database")
+
+    @dataclass
+    class Sample(Model):
+        class Meta:
+            client_name = "sample_database"
+
+        text: str
+
+    @dataclass
+    class Other(Model):
+        text: str
+
+    assert Sample.get_database().name == "sample_database"
+    assert Other.get_database().name != "sample_database"
+
+
+def test_can_define_a_default_meta_for_subclasses():
+    uri = "mongodb://localhost:27017/authentication"
+
+    connect(uri, client_name="authentication")
+
+    class Base(Model):
+        class Meta:
+            client_name = "authentication"
+
+    @dataclass
+    class User(Base):
+        text: str
+
+    assert User.get_config("client_name") == "authentication"
