@@ -42,6 +42,12 @@ class ModelMeta(type):
     def __new__(cls, name, bases, attrs):
         if name not in ["Model", "BaseModel"]:
             attrs["collection"] = to_collection_name(name)
+            attrs["_id"] = field(default_factory=ObjectId)
+
+            if not attrs.get("__annotations__"):
+                attrs["__annotations__"] = {}
+
+            attrs["__annotations__"]["_id"] = ObjectId
 
         model = super().__new__(cls, name, bases, attrs)
 
@@ -98,10 +104,8 @@ def as_model(func):
     return wrapper
 
 
-@dataclass(kw_only=True)
+@dataclass
 class Model(BaseModel, Generic[T]):
-    _id: ObjectId = field(default_factory=ObjectId)
-
     def to_dict(self):
         return asdict(self)
 
