@@ -160,3 +160,11 @@ def test_can_define_a_default_meta_for_subclasses():
         text: str
 
     assert User.get_config("client_name") == "authentication"
+
+
+def test_model_from_dict_ignores_extra_fields():
+    _id = ObjectId()
+    res = MyModel.from_dict({"_id": _id, "text": "new text", "extra": "field"})
+
+    assert res._id == _id
+    assert res.text == "new text"

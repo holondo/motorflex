@@ -122,7 +122,9 @@ class Model(BaseModel, Generic[T]):
 
     @classmethod
     def from_dict(cls, document: Dict[str, Any]) -> T:
-        return cls(**document)
+        allowed_fields = [x.name for x in fields(cls)]
+
+        return cls(**{k: v for k, v in document.items() if k in allowed_fields})
 
     def update(self, **kwargs):
         allowed_fields = [x.name for x in fields(self)]
