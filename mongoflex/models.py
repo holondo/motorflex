@@ -1,41 +1,29 @@
 import re
 from dataclasses import asdict, dataclass, field, fields
-from typing import (
-    Any,
-    Dict,
-    Generic,
-    Iterable,
-    Mapping,
-    Optional,
-    Protocol,
-    Sequence,
-    TypeVar,
-    Union,
-)
+from typing import Any, Dict, Generic, Iterable, Mapping, Optional, TypeVar
 
 from bson import ObjectId
 from inflect import engine
+from motor.motor_asyncio import (
+    AsyncIOMotorClient,
+    AsyncIOMotorCollection,
+    AsyncIOMotorDatabase,
+)
 from pymongo import IndexModel
-from pymongo.collection import Collection
-from pymongo.database import Database
 
-from mongoflex.connection import DEFAULT_CLIENT_NAME, get_database
-
-__all__ = [
-    "Model",
-    "ModelMeta",
-]
+__all__ = ["Model", "ModelMeta"]
 
 inflector = engine()
 
 T = TypeVar("T", bound="Model")
 
 
-class MetaConfig(Protocol):
+class MetaConfig:
     client_name: str
+    database_name: str
 
 
-def to_collection_name(class_name):
+def to_collection_name(class_name: str) -> str:
     words = [x.lower() for x in re.findall("[A-Z][^A-Z]*", class_name)]
     words[-1] = inflector.plural(words[-1])
     return "_".join(words)
@@ -46,7 +34,7 @@ class ModelMeta(type):
 
     def __new__(cls, name, bases, attrs):
         if name not in ["Model", "BaseModel"]:
-            attrs["collection"] = to_collection_name(name)
+            attrs["collection_name"] = to_collection_name(name)
             attrs["_id"] = field(default_factory=ObjectId)
 
             if not attrs.get("__annotations__"):
@@ -62,47 +50,48 @@ class ModelMeta(type):
         return model
 
     def __init_subclass__(
-        cls,
-        /,
-        database: str = None,
-        collection: str = None,
-        **kwargs,
+        cls, /, database: str = None, collection: str = None, **kwargs
     ) -> None:
         super().__init_subclass__(**kwargs)
 
-        cls.database = cls.database or database
-        cls.collection = cls.collection or collection
+        cls.database_name = cls.database_name or database
+        cls.collection_name = cls.collection_name or collection
 
+    @classmethod
+    def get_client(cls) -> AsyncIOMotorClient:
+        client_name = cls.get_config("client_name", "default")
+        return AsyncIOMotorClient(client_name)
+
+    @classmethod
+    def get_database(cls) -> AsyncIOMotorDatabase:
+        client = cls.get_client()
+        db_name = cls.get_config("database_name")
+        return client[db_name]
+
+    @classmethod
+    def get_collection(cls) -> AsyncIOMotorCollection:
+        db = cls.get_database()
+        return db[cls.collection_name]
+
+    @classmethod
     def get_config(cls, name: str, default: Any = None):
         config = getattr(cls, "Meta", {})
-
         return getattr(config, name, default)
-
-    def get_database(cls) -> Database:
-        db_name = getattr(cls, "database", None)
-        client_name = cls.get_config("client_name", DEFAULT_CLIENT_NAME)
-
-        return get_database(db_name, client_name=client_name)
-
-    @property
-    def objects(cls) -> Collection:
-        collection = cls.get_database().get_collection(cls.collection)
-
-        indexes = getattr(cls, "INDEXES", [])
-
-        if indexes:
-            collection.create_indexes(indexes)
-
-        return collection
 
 
 class BaseModel(metaclass=ModelMeta):
-    INDEXES: Sequence[IndexModel] = []
+    INDEXES: Iterable[IndexModel] = []
+
+    @classmethod
+    async def create_indexes(cls):
+        collection = cls.get_collection()
+        if cls.INDEXES:
+            await collection.create_indexes(cls.INDEXES)
 
 
 def as_model(func):
-    def wrapper(cls, *args, **kwargs) -> Union[T, Iterable[T]]:
-        response = func(cls, *args, **kwargs)
+    async def wrapper(cls, *args, **kwargs):
+        response = await func(cls, *args, **kwargs)
 
         if not response:
             return response
@@ -110,7 +99,7 @@ def as_model(func):
         if isinstance(response, dict):
             return cls.from_dict(response)
 
-        return map(cls.from_dict, func(cls, *args, **kwargs))
+        return map(cls.from_dict, await func(cls, *args, **kwargs))
 
     return wrapper
 
@@ -123,39 +112,37 @@ class Model(BaseModel, Generic[T]):
     @classmethod
     def from_dict(cls, document: Dict[str, Any]) -> T:
         allowed_fields = [x.name for x in fields(cls)]
-
         return cls(**{k: v for k, v in document.items() if k in allowed_fields})
 
-    def update(self, **kwargs):
+    async def update(self, **kwargs):
         allowed_fields = [x.name for x in fields(self)]
 
         for key in kwargs.keys():
             if key not in allowed_fields:
                 raise KeyError(f"Key {key} not allowed")
 
-        self.__class__.objects.update_one(
-            {"_id": self._id},
-            {"$set": kwargs},
+        await self.__class__.get_collection().update_one(
+            {"_id": self._id}, {"$set": kwargs}
         )
 
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def save(self):
-        self.__class__.objects.update_one(
+    async def save(self):
+        await self.__class__.get_collection().update_one(
             {"_id": self._id}, {"$set": self.to_dict()}, upsert=True
         )
 
     @classmethod
     @as_model
-    def find_one(
+    async def find_one(
         cls, filter: Optional[Any] = None, *args: Any, **kwargs: Any
     ) -> Optional[T]:
-        return cls.objects.find_one(filter, *args, **kwargs)
+        return await cls.get_collection().find_one(filter, *args, **kwargs)
 
     @classmethod
     @as_model
-    def find(
+    async def find(
         cls, filter: Mapping[str, Any] = None, *args: Any, **kwargs: Any
     ) -> Iterable[T]:
-        return cls.objects.find(filter, *args, **kwargs)
+        return cls.get_collection().find(filter, *args, **kwargs)
